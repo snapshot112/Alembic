@@ -1,166 +1,119 @@
-﻿using System;
-using System.Diagnostics;
-using System.IO;
-using System.Text.Json;
-using System.Threading.Tasks;
+﻿using System.Text.Json;
+using Alembic.Agent.Core;
+using Alembic.Agent.Core.Helpers;
+using Alembic.Agent.Core.Logging;
+using Alembic.Development.Bridge.Logging;
 
-namespace Alembic.Development.Bridge
+namespace Alembic.Development.Bridge;
+
+/*
+ * The main application class for the Development Bridge.
+ * This console app acts as a "test harness" for the ActionDispatcher,
+ * providing a console-based logger and a way to send commands.
+ */
+public static class Program
 {
-    /// <summary>
-    /// Represents a single instruction received from the user.
-    /// Records are used for their simplicity and immutability.
-    /// </summary>
-    public record Command(string Action, string? Path, string? Content, string? Arguments);
-
-    /// <summary>
-    /// The main application class for the Development Bridge.
-    /// This is a simple console app designed to bootstrap the development process
-    /// by executing commands provided by the AI assistant.
-    /// </summary>
-    public static class Program
+    /*
+     * The main entry point for the application.
+     * It can run in two modes:
+     * 1. Interactive Mode (no arguments): Runs the primary command processing loop.
+     * 2. File Mode (one argument): Reads and executes a single command from a specified file path.
+     */
+    public static async Task Main(string[] args)
     {
-        /// <summary>
-        /// The main entry point for the application.
-        /// </summary>
-        public static async Task Main(string[] args)
+        var rootDirectory = ProjectEnvironment.GetProjectRoot();
+        
+        // 1. Create the concrete logger implementation.
+        ILogger logger = new ConsoleLogger();
+
+        // 2. Inject the logger into the ActionDispatcher.
+        var dispatcher = new ActionDispatcher(rootDirectory, logger);
+
+        if (args.Length > 0)
         {
-            Console.WriteLine("Alembic Development Bridge Initialized.");
-            Console.WriteLine("Ready to receive JSON commands. Type 'exit' to quit.");
-
-            // The main application loop.
-            while (true)
-            {
-                Console.Write("> ");
-                var input = await Console.In.ReadLineAsync();
-
-                if (string.IsNullOrWhiteSpace(input) || input.Equals("exit", StringComparison.OrdinalIgnoreCase))
-                {
-                    break;
-                }
-
-                try
-                {
-                    // Use modern System.Text.Json for high-performance parsing.
-                    var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                    var command = JsonSerializer.Deserialize<Command>(input, options);
-
-                    if (command == null || string.IsNullOrWhiteSpace(command.Action))
-                    {
-                        Console.WriteLine("Error: Invalid JSON or missing 'action' property.");
-                        continue;
-                    }
-                    
-                    // Dispatch the command to the appropriate handler.
-                    await ExecuteCommandAsync(command);
-                }
-                catch (JsonException)
-                {
-                    Console.WriteLine("Error: Invalid JSON format.");
-                }
-                catch (Exception ex)
-                {
-                    // Catch-all for any other errors during execution.
-                    Console.WriteLine($"An unexpected error occurred: {ex.Message}");
-                }
-            }
-
-            Console.WriteLine("Alembic Development Bridge Terminated.");
+            // File Mode: Execute a command from a file and exit.
+            var filePath = args[0];
+            await ExecuteCommandFromFileAsync(filePath, dispatcher, logger);
         }
-
-        /// <summary>
-        /// Executes a command based on its 'Action' property.
-        /// </summary>
-        private static async Task ExecuteCommandAsync(Command command)
+        else
         {
-            switch (command.Action.ToLowerInvariant())
-            {
-                case "create_file":
-                    HandleCreateFile(command);
-                    break;
-                
-                case "execute_command":
-                    await HandleExecuteCommandAsync(command);
-                    break;
-                
-                default:
-                    Console.WriteLine($"Error: Unknown action '{command.Action}'.");
-                    break;
-            }
+            // Interactive Mode: Run the command loop.
+            await RunInteractiveLoopAsync(dispatcher, logger);
         }
+    }
 
-        /// <summary>
-        /// Handles the creation and writing of a file.
-        /// </summary>
-        private static void HandleCreateFile(Command command)
+    /*
+     * Reads, deserializes, and executes a single command from a given file path.
+     */
+    private static async Task ExecuteCommandFromFileAsync(string filePath, ActionDispatcher dispatcher, ILogger logger)
+    {
+        if (!SanitizationHelpers.TrySanitizePath(filePath,
+                Path.Combine(ProjectEnvironment.GetProjectRoot(), "/Commands"), out var sanitizedPath))
         {
-            if (string.IsNullOrWhiteSpace(command.Path))
-            {
-                Console.WriteLine("Error: 'path' is required for create_file action.");
-                return;
-            }
-
-            try
-            {
-                // Ensure the directory exists before creating the file.
-                var directory = Path.GetDirectoryName(command.Path);
-                if (!string.IsNullOrEmpty(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                }
-
-                File.WriteAllText(command.Path, command.Content ?? string.Empty);
-                Console.WriteLine($"Successfully created/updated file: {command.Path}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error creating file {command.Path}: {ex.Message}");
-            }
+            logger.LogError("Path traversal detected or path is invalid.");
+            return;
         }
         
-        /// <summary>
-        /// Handles the execution of a shell command.
-        /// </summary>
-        private static async Task HandleExecuteCommandAsync(Command command)
+        if (!File.Exists(sanitizedPath))
         {
-            if (string.IsNullOrWhiteSpace(command.Arguments))
+            logger.LogError($"Command file not found at '{sanitizedPath}'");
+            return;
+        }
+
+        var jsonContent = await File.ReadAllTextAsync(sanitizedPath);
+        await ProcessCommandInput(jsonContent, dispatcher, logger);
+    }
+
+    /*
+     * Runs the interactive command loop, waiting for user input from the console.
+     */
+    private static async Task RunInteractiveLoopAsync(ActionDispatcher dispatcher, ILogger logger)
+    {
+        logger.LogInfo("Alembic Development Bridge Initialized (Secure Action Model).");
+        logger.LogInfo("Ready to receive JSON commands. Type 'exit' to quit.");
+
+        while (true)
+        {
+            Console.Write("> ");
+            var input = await Console.In.ReadLineAsync();
+
+            if (string.IsNullOrWhiteSpace(input) || input.Equals("exit", StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine("Error: 'arguments' are required for execute_command action.");
+                break;
+            }
+
+            await ProcessCommandInput(input, dispatcher, logger);
+        }
+        
+        logger.LogInfo("Alembic Development Bridge Terminated.");
+    }
+
+    /*
+     * Central logic to process a JSON command string from any source (file or console).
+     */
+    private static async Task ProcessCommandInput(string jsonInput, ActionDispatcher dispatcher, ILogger logger)
+    {
+        try
+        {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var command = JsonSerializer.Deserialize<Command>(jsonInput, options);
+
+            if (command == null || string.IsNullOrWhiteSpace(command.Action))
+            {
+                logger.LogError("Invalid JSON or missing 'action' property.");
                 return;
             }
-
-            var processStartInfo = new ProcessStartInfo
-            {
-                FileName = "cmd.exe", // Or "/bin/bash" on Linux/macOS
-                Arguments = $"/c {command.Arguments}", // The /c argument tells cmd to run the command and then terminate
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-
-            using var process = new Process { StartInfo = processStartInfo };
-            
-            Console.WriteLine($"Executing: {command.Arguments}");
-            
-            process.Start();
-            
-            // Asynchronously read the output and error streams.
-            var output = await process.StandardOutput.ReadToEndAsync();
-            var error = await process.StandardError.ReadToEndAsync();
-            
-            await process.WaitForExitAsync();
-
-            if (!string.IsNullOrEmpty(output))
-            {
-                Console.WriteLine("Output:\n" + output);
-            }
-
-            if (!string.IsNullOrEmpty(error))
-            {
-                Console.WriteLine("Error Output:\n" + error);
-            }
-            
-            Console.WriteLine($"Command finished with exit code: {process.ExitCode}");
+                    
+            await dispatcher.ExecuteActionAsync(command);
+        }
+        catch (JsonException)
+        {
+            logger.LogError("Invalid JSON format.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError($"An unexpected error occurred: {ex.Message}");
         }
     }
 }
+
