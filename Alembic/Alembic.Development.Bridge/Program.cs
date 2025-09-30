@@ -47,8 +47,7 @@ public static class Program
      */
     private static async Task ExecuteCommandFromFileAsync(string filePath, ActionDispatcher dispatcher, ILogger logger)
     {
-        if (!SanitizationHelpers.TrySanitizePath(filePath,
-                Path.Combine(ProjectEnvironment.GetProjectRoot(), "/Commands"), out var sanitizedPath))
+        if (!SanitizationHelpers.TrySanitizePath(filePath, ProjectEnvironment.GetCommandsDirectory(), out var sanitizedPath))
         {
             logger.LogError("Path traversal detected or path is invalid.");
             return;

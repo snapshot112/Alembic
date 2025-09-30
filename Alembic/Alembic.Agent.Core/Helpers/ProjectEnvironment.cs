@@ -44,5 +44,7 @@ public static class ProjectEnvironment
         _projectRoot = currentDirectory.FullName;
         return _projectRoot;
     }
+    
+    public static string GetCommandsDirectory() =>  Path.Combine(GetProjectRoot(), "Commands");
 }
 

@@ -2,7 +2,8 @@
 <project version="4">
   <component name="UserContentModel">
     <attachedFolders>
-      <Path>../Docs</Path>
+      <Path>Commands</Path>
+      <Path>docs</Path>
     </attachedFolders>
     <explicitIncludes />
     <explicitExcludes />
