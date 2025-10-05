@@ -1,8 +1,5 @@
-﻿using System;
-using System.IO;
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 using Alembic.Agent.Core;
 using Alembic.Agent.Core.Helpers;
 using Alembic.Agent.Core.Logging;
@@ -13,37 +10,77 @@ namespace Alembic.Development.Bridge;
 
 /*
  * The main application class for the Development Bridge.
- * This console app acts as a "test harness" for the ActionDispatcher,
- * providing a console-based logger and a way to send commands.
+ * This console app acts as a "test harness" for the ActionDispatcher.
  */
 public static class Program
 {
     /*
      * The main entry point for the application.
-     * It can run in two modes:
-     * 1. Interactive Mode (no arguments): Runs the primary command processing loop.
-     * 2. File Mode (one argument): Reads and executes a single command from a specified file path.
      */
     public static async Task Main(string[] args)
     {
-        var rootDirectory = ProjectEnvironment.GetProjectRoot();
-        
-        // 1. Create the concrete logger implementation.
         ILogger logger = new ConsoleLogger();
-
-        // 2. Inject the logger into the ActionDispatcher.
-        var dispatcher = new ActionDispatcher(rootDirectory, logger);
-
-        if (args.Length > 0)
+        
+        try
         {
-            // File Mode: Execute a command from a file and exit.
-            var filePath = args[0];
-            await ExecuteCommandFromFileAsync(filePath, dispatcher, logger);
+            // Use the new SourceRoot property as the secure working directory for the agent.
+            var sourceRoot = ProjectEnvironment.SourceRoot;
+            
+            var userConfig = LoadUserConfig(logger);
+            if (userConfig is null)
+            {
+                logger.LogError("Failed to load user configuration. Aborting.");
+                return;
+            }
+        
+            var dispatcher = new ActionDispatcher(sourceRoot, logger, userConfig);
+
+            if (args.Length > 0)
+            {
+                var filePath = args[0];
+                await ExecuteCommandFromFileAsync(filePath, dispatcher, logger);
+            }
+            else
+            {
+                await RunInteractiveLoopAsync(dispatcher, logger);
+            }
         }
-        else
+        catch (DirectoryNotFoundException ex)
         {
-            // Interactive Mode: Run the command loop.
-            await RunInteractiveLoopAsync(dispatcher, logger);
+            logger.LogError(ex.Message);
+        }
+    }
+    
+    /*
+     * Loads and deserializes the UserConfig from 'UserConfig/settings.json'.
+     * @param logger The logger to use for reporting errors.
+     * @returns The loaded UserConfig object, or null if loading fails.
+     */
+    private static UserConfig? LoadUserConfig(ILogger logger)
+    {
+        try
+        {
+            // The config path is correctly located relative to the RepositoryRoot.
+            var configPath = ProjectEnvironment.GetUserConfigPath();
+            if (!File.Exists(configPath))
+            {
+                logger.LogError($"User configuration file not found at '{configPath}'.");
+                return null;
+            }
+
+            var jsonContent = File.ReadAllText(configPath);
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                Converters = { new JsonStringEnumConverter() }
+            };
+            
+            return JsonSerializer.Deserialize<UserConfig>(jsonContent, options);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError($"Error loading user configuration: {ex.Message}");
+            return null;
         }
     }
 
@@ -52,9 +89,10 @@ public static class Program
      */
     private static async Task ExecuteCommandFromFileAsync(string filePath, ActionDispatcher dispatcher, ILogger logger)
     {
-        if (!SanitizationHelpers.TrySanitizePath(filePath, ProjectEnvironment.GetCommandsDirectory(), out var sanitizedPath))
+        // Commands directory is now correctly located relative to the RepositoryRoot.
+        if (!SanitizationHelpers.TrySanitizePath(filePath, ProjectEnvironment.CommandsDirectory, out var sanitizedPath))
         {
-            logger.LogError("Path traversal detected or path is invalid.");
+            logger.LogError("Path traversal detected or path is invalid. Commands can only be loaded from the 'Commands' directory.");
             return;
         }
         
@@ -67,7 +105,7 @@ public static class Program
         var jsonContent = await File.ReadAllTextAsync(sanitizedPath);
         await ProcessCommandInput(jsonContent, dispatcher, logger);
     }
-
+    
     /*
      * Runs the interactive command loop, waiting for user input from the console.
      */
@@ -125,3 +163,4 @@ public static class Program
         }
     }
 }
+

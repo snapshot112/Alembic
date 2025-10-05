@@ -1,0 +1,6 @@
+﻿{
+  "action": "GitAdd",
+  "parameters": {
+    "filePath": "."
+  }
+}

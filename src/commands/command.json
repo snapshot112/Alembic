@@ -1,7 +1,0 @@
-﻿{
-  "action": "GitCommit",
-  "parameters": {
-    "stageAll": true,
-    "message": "feat: Add git_commit action to ActionDispatcher"
-  }
-}

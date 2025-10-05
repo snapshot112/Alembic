@@ -6,45 +6,86 @@
  */
 public static class ProjectEnvironment
 {
-    private static string? _projectRoot;
+    
+    private static string? _repositoryRoot;
+    private static string? _sourceRoot;
 
     /*
-     * Finds and returns the absolute path to the project's root directory.
-     * The result is cached after the first call for performance.
-     * The root is identified by searching upwards from the current execution
-     * directory for a marker, such as the '.git' folder or 'Alembic.sln' file.
+     * Gets the absolute path to the repository's root directory.
+     * The root is identified by searching upwards for the '.git' folder.
+     * The result is cached for performance.
      *
-     * @returns The full path to the project root.
+     * @returns The full path to the repository root.
      * @throws DirectoryNotFoundException if the root cannot be determined.
      */
-    public static string GetProjectRoot()
+    public static string RepositoryRoot
     {
-        // Return the cached result if we've already found it.
-        if (!string.IsNullOrEmpty(_projectRoot))
+        get
         {
-            return _projectRoot;
-        }
+            if (!string.IsNullOrEmpty(_repositoryRoot))
+            {
+                return _repositoryRoot;
+            }
 
-        var currentDirectory = new DirectoryInfo(AppContext.BaseDirectory);
-        
-        // Traverse up the directory tree until a marker is found.
-        while (currentDirectory != null && 
-               !Directory.Exists(Path.Combine(currentDirectory.FullName, ".git")) && 
-               !File.Exists(Path.Combine(currentDirectory.FullName, "Alembic.sln")))
-        {
-            currentDirectory = currentDirectory.Parent;
-        }
+            var currentDirectory = new DirectoryInfo(AppContext.BaseDirectory);
+            while (currentDirectory != null && !Directory.Exists(Path.Combine(currentDirectory.FullName, ".git")))
+            {
+                currentDirectory = currentDirectory.Parent;
+            }
 
-        if (currentDirectory == null)
-        {
-            // If we traverse all the way to the root without finding a marker, we're in an unknown location.
-            throw new DirectoryNotFoundException("Could not find the project root directory. Ensure the application is run from within the project structure.");
-        }
+            if (currentDirectory == null)
+            {
+                throw new DirectoryNotFoundException("Could not find the repository root directory (marker: .git folder).");
+            }
 
-        _projectRoot = currentDirectory.FullName;
-        return _projectRoot;
+            _repositoryRoot = currentDirectory.FullName;
+            return _repositoryRoot;
+        }
     }
     
-    public static string GetCommandsDirectory() =>  Path.Combine(GetProjectRoot(), "Commands");
+    /*
+     * Gets the absolute path to the source code ('src') directory, which contains the solution file.
+     * The root is identified by searching upwards for the 'Alembic.sln' file.
+     * The result is cached for performance.
+     *
+     * @returns The full path to the 'src' directory.
+     * @throws DirectoryNotFoundException if the root cannot be determined.
+     */
+    public static string SourceRoot
+    {
+        get
+        {
+            if (!string.IsNullOrEmpty(_sourceRoot))
+            {
+                return _sourceRoot;
+            }
+            
+            var currentDirectory = new DirectoryInfo(AppContext.BaseDirectory);
+            while (currentDirectory != null && !File.Exists(Path.Combine(currentDirectory.FullName, "Alembic.sln")))
+            {
+                currentDirectory = currentDirectory.Parent;
+            }
+
+            if (currentDirectory == null)
+            {
+                throw new DirectoryNotFoundException("Could not find the source root directory (marker: Alembic.sln file).");
+            }
+
+            _sourceRoot = currentDirectory.FullName;
+            return _sourceRoot;
+        }
+    }
+
+    /*
+     * Gets the full path to the commands directory.
+     * @returns The path to 'Commands' within the repository root.
+     */
+    public static string CommandsDirectory => Path.Combine(RepositoryRoot, "Commands");
+    
+    /*
+     * Gets the full path to the user configuration file.
+     * @returns The path to 'UserConfig/settings.json' within the project root.
+     */
+    public static string GetUserConfigPath() => Path.Combine(RepositoryRoot, "UserConfig", "settings.json");
 }
 

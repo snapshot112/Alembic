@@ -1,0 +1,7 @@
+{
+  "VerificationSettings": {
+    "None": "None",
+    "RequiresConfirmation": "Password",
+    "RequiresStrongAuthentication": "Authenticator"
+  }
+}

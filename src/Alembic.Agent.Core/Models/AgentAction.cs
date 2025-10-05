@@ -1,15 +1,47 @@
-﻿namespace Alembic.Agent.Core.Models;
+﻿using System.Text.Json.Serialization;
+
+namespace Alembic.Agent.Core.Models;
 
 /*
  * Defines the complete set of actions the agent can perform.
- * Using an enum provides compile-time safety and self-documentation.
- * * NOTE: This enum should eventually be moved to its own file within a 'Models'
- * or 'Contracts' folder for better organization (e.g., 'src/Alembic.Agent.Core/Models/AgentAction.cs').
+ * Each action is decorated with a SecurityLevel attribute to define its risk.
  */
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum AgentAction
 {
+    [SecurityLevel(SecurityLevel.RequiresConfirmation)]
     CreateFile,
+    
+    [SecurityLevel(SecurityLevel.None)]
     DotnetBuild,
+    
+    [SecurityLevel(SecurityLevel.RequiresConfirmation)]
     DotnetNewClasslib,
-    GitCommit
+    
+    [SecurityLevel(SecurityLevel.RequiresConfirmation)]
+    GitCommit,
+    
+    [SecurityLevel(SecurityLevel.RequiresStrongAuthentication)]
+    GitPush,
+    
+    [SecurityLevel(SecurityLevel.None)]
+    GitStatus,
+    
+    [SecurityLevel(SecurityLevel.RequiresConfirmation)]
+    GitAdd,
+    
+    [SecurityLevel(SecurityLevel.RequiresConfirmation)]
+    GitReset,
+    
+    [SecurityLevel(SecurityLevel.RequiresStrongAuthentication)]
+    GitCheckout,
+    
+    [SecurityLevel(SecurityLevel.None)]
+    GitLog,
+    
+    [SecurityLevel(SecurityLevel.RequiresConfirmation)]
+    GitBranch,
+    
+    [SecurityLevel(SecurityLevel.RequiresStrongAuthentication)]
+    GitDeleteBranch
 }
