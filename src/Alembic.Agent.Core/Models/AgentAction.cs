@@ -13,6 +13,15 @@ public enum AgentAction
     CreateFile,
     
     [SecurityLevel(SecurityLevel.None)]
+    ReadFile,
+    
+    [SecurityLevel(SecurityLevel.RequiresConfirmation)]
+    DeleteFile,
+    
+    [SecurityLevel(SecurityLevel.None)]
+    ListDirectory,
+    
+    [SecurityLevel(SecurityLevel.None)]
     DotnetBuild,
     
     [SecurityLevel(SecurityLevel.RequiresConfirmation)]
@@ -43,5 +52,8 @@ public enum AgentAction
     GitBranch,
     
     [SecurityLevel(SecurityLevel.RequiresStrongAuthentication)]
-    GitDeleteBranch
+    GitDeleteBranch,
+    
+    [SecurityLevel(SecurityLevel.RequiresStrongAuthentication)]
+    GitClean
 }

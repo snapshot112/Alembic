@@ -1,6 +1,6 @@
 ﻿{
-  "action": "GitAdd",
+  "action": "DeleteFile",
   "parameters": {
-    "filePath": "."
+    "filePath": "test-for-deletion.txt"
   }
 }

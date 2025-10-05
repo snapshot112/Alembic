@@ -1,5 +1,9 @@
-﻿using System.Text.Json;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using Alembic.Agent.Core;
 using Alembic.Agent.Core.Helpers;
 using Alembic.Agent.Core.Logging;
@@ -10,7 +14,8 @@ namespace Alembic.Development.Bridge;
 
 /*
  * The main application class for the Development Bridge.
- * This console app acts as a "test harness" for the ActionDispatcher.
+ * This console app acts as a "test harness" for the ActionDispatcher,
+ * loading user configuration and providing a way to send commands.
  */
 public static class Program
 {
@@ -23,7 +28,6 @@ public static class Program
         
         try
         {
-            // Use the new SourceRoot property as the secure working directory for the agent.
             var sourceRoot = ProjectEnvironment.SourceRoot;
             
             var userConfig = LoadUserConfig(logger);
@@ -60,8 +64,7 @@ public static class Program
     {
         try
         {
-            // The config path is correctly located relative to the RepositoryRoot.
-            var configPath = ProjectEnvironment.GetUserConfigPath();
+            var configPath = Path.Combine(ProjectEnvironment.RepositoryRoot, "UserConfig", "settings.json");
             if (!File.Exists(configPath))
             {
                 logger.LogError($"User configuration file not found at '{configPath}'.");
@@ -89,7 +92,6 @@ public static class Program
      */
     private static async Task ExecuteCommandFromFileAsync(string filePath, ActionDispatcher dispatcher, ILogger logger)
     {
-        // Commands directory is now correctly located relative to the RepositoryRoot.
         if (!SanitizationHelpers.TrySanitizePath(filePath, ProjectEnvironment.CommandsDirectory, out var sanitizedPath))
         {
             logger.LogError("Path traversal detected or path is invalid. Commands can only be loaded from the 'Commands' directory.");
@@ -131,7 +133,8 @@ public static class Program
     }
 
     /*
-     * Central logic to process a JSON command string from any source (file or console).
+     * Central logic to process a JSON command string from any source.
+     * This method can now handle both a single command object and an array of commands.
      */
     private static async Task ProcessCommandInput(string jsonInput, ActionDispatcher dispatcher, ILogger logger)
     {
@@ -142,16 +145,34 @@ public static class Program
                 PropertyNameCaseInsensitive = true,
                 Converters = { new JsonStringEnumConverter() }
             };
-            
-            var command = JsonSerializer.Deserialize<Command>(jsonInput, options);
 
-            if (command == null)
+            using var jsonDoc = JsonDocument.Parse(jsonInput);
+            
+            if (jsonDoc.RootElement.ValueKind == JsonValueKind.Array)
             {
-                logger.LogError("Invalid JSON command format.");
-                return;
+                logger.LogInfo($"Executing batch of {jsonDoc.RootElement.GetArrayLength()} commands...");
+                foreach (var element in jsonDoc.RootElement.EnumerateArray())
+                {
+                    var command = element.Deserialize<Command>(options);
+                    if (command != null)
+                    {
+                        await dispatcher.ExecuteActionAsync(command);
+                    }
+                }
+                logger.LogInfo("Batch execution complete.");
             }
-                    
-            await dispatcher.ExecuteActionAsync(command);
+            else if (jsonDoc.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                var command = jsonDoc.RootElement.Deserialize<Command>(options);
+                if (command != null)
+                {
+                    await dispatcher.ExecuteActionAsync(command);
+                }
+            }
+            else
+            {
+                logger.LogError("Invalid JSON command format. Root must be an object or an array.");
+            }
         }
         catch (JsonException ex)
         {
