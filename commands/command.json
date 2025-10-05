@@ -1,6 +1,15 @@
-﻿{
-  "action": "DeleteFile",
-  "parameters": {
-    "filePath": "test-for-deletion.txt"
+﻿[
+  {
+    "action": "StoreSecret",
+    "parameters": {
+      "key": "TestApiKey",
+      "secret": "my-super-secret-value-123"
+    }
+  },
+  {
+    "action": "RetrieveSecret",
+    "parameters": {
+      "key": "TestApiKey"
+    }
   }
-}
+]

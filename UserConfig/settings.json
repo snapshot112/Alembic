@@ -1,16 +1,7 @@
-[
-  {
-    "action": "CreateFile",
-    "parameters": {
-      "path": "Alembic.Agent.Core/Secrets/ISecretStore.cs",
-      "content": "using System.Threading.Tasks;\n\nnamespace Alembic.Agent.Core.Secrets;\n\n/*\n * Defines a contract for a secure storage provider for sensitive data\n * like API keys and tokens.\n */\npublic interface ISecretStore\n{\n    /*\n     * Securely stores a secret value associated with a key.\n     * If a secret for the given key already exists, it should be overwritten.\n     * @param key The unique identifier for the secret (e.g., \"GitHubApiToken\").\n     * @param secret The sensitive value to store.\n     */\n    Task StoreSecretAsync(string key, string secret);\n\n    /*\n     * Retrieves a secret value associated with a key.\n     * @param key The unique identifier for the secret.\n     * @returns The secret value, or null if the key is not found.\n     */\n    Task<string?> RetrieveSecretAsync(string key);\n    \n    /*\n     * Deletes a secret value associated with a key.\n     * @param key The unique identifier for the secret to delete.\n     */\n    Task DeleteSecretAsync(string key);\n}\n"
-    }
-  },
-  {
-    "action": "CreateFile",
-    "parameters": {
-      "path": "Alembic.Agent.Core/Models/AgentAction.cs",
-      "content": "namespace Alembic.Agent.Core.Models;\n\n/*\n * Defines the complete set of actions the agent can perform.\n * Each action is decorated with a SecurityLevel attribute to define its risk.\n */\npublic enum AgentAction\n{\n    // File System\n    [SecurityLevel(SecurityLevel.RequiresConfirmation)]\n    CreateFile,\n    [SecurityLevel(SecurityLevel.None)]\n    ReadFile,\n    [SecurityLevel(SecurityLevel.RequiresConfirmation)]\n    DeleteFile,\n    [SecurityLevel(SecurityLevel.None)]\n    ListDirectory,\n    \n    // .NET CLI\n    [SecurityLevel(SecurityLevel.None)]\n    DotnetBuild,\n    [SecurityLevel(SecurityLevel.RequiresConfirmation)]\n    DotnetNewClasslib,\n    \n    // Git\n    [SecurityLevel(SecurityLevel.RequiresConfirmation)]\n    GitCommit,\n    [SecurityLevel(SecurityLevel.RequiresStrongAuthentication)]\n    GitPush,\n    [SecurityLevel(SecurityLevel.None)]\n    GitStatus,\n    [SecurityLevel(SecurityLevel.RequiresConfirmation)]\n    GitAdd,\n    [SecurityLevel(SecurityLevel.RequiresConfirmation)]\n    GitReset,\n    [SecurityLevel(SecurityLevel.RequiresStrongAuthentication)]\n    GitCheckout,\n    [SecurityLevel(SecurityLevel.None)]\n    GitLog,\n    [SecurityLevel(SecurityLevel.RequiresConfirmation)]\n    GitBranch,\n    [SecurityLevel(SecurityLevel.RequiresStrongAuthentication)]\n    GitDeleteBranch,\n    [SecurityLevel(SecurityLevel.RequiresStrongAuthentication)]\n    GitClean,\n    \n    // Secret Management\n    [SecurityLevel(SecurityLevel.RequiresStrongAuthentication)]\n    StoreSecret,\n    [SecurityLevel(SecurityLevel.RequiresStrongAuthentication)]\n    RetrieveSecret\n}\n"
-    }
+{
+  "VerificationSettings": {
+    "None": "None",
+    "RequiresConfirmation": "Password",
+    "RequiresStrongAuthentication": "Authenticator"
   }
-]
+}

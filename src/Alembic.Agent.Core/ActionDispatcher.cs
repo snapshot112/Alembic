@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using Alembic.Agent.Core.Handlers;
 using Alembic.Agent.Core.Logging;
 using Alembic.Agent.Core.Models;
@@ -7,24 +7,11 @@ namespace Alembic.Agent.Core;
 
 /*
  * The core class responsible for receiving commands and dispatching them
- * to the appropriate secure handlers. This is the "engine" of the Local Agent.
+ * to the appropriate secure handlers. This is the 'engine' of the Local Agent.
  */
-public class ActionDispatcher(string rootDirectory, ILogger logger, UserConfig userConfig)
+public class ActionDispatcher(ILogger logger, UserConfig userConfig, IEnumerable<IActionHandler> handlers)
 {
-    private readonly List<IActionHandler> _handlers =
-    [
-        new FileSystemActionHandler(rootDirectory, logger),
-        new GitActionHandler(rootDirectory, logger),
-        new DotnetActionHandler(rootDirectory, logger)
-    ];
-
-    /*
-     * Initializes a new instance of the ActionDispatcher class.
-     * @param rootDirectory The secure root directory for all file and process operations.
-     * @param logger The logging provider to use for all output.
-     * @param userConfig The loaded user security configuration.
-     */
-    // Register all available handlers.
+    private readonly IReadOnlyList<IActionHandler> _handlers = handlers.ToList();
 
     /*
      * The primary public entry point for executing a command.
@@ -43,7 +30,7 @@ public class ActionDispatcher(string rootDirectory, ILogger logger, UserConfig u
 
         var handler = _handlers.FirstOrDefault(h => h.CanHandle(command.Action));
         if (handler != null)
-        {
+        { 
             await handler.HandleActionAsync(command);
         }
         else
@@ -51,13 +38,7 @@ public class ActionDispatcher(string rootDirectory, ILogger logger, UserConfig u
             logger.LogError($"No handler registered for action '{command.Action}'.");
         }
     }
-
-    /*
-     * Checks if an action is allowed to proceed based on its security level
-     * and the user's configured verification requirements.
-     * @param action The agent action to verify.
-     * @returns True if the action is allowed, false otherwise.
-     */
+    
     private bool IsActionAllowed(AgentAction action)
     {
         var securityLevel = GetSecurityLevelForAction(action);
@@ -89,11 +70,6 @@ public class ActionDispatcher(string rootDirectory, ILogger logger, UserConfig u
         }
     }
 
-    /*
-     * Uses reflection to read the SecurityLevelAttribute from an AgentAction enum member.
-     * @param action The action to inspect.
-     * @returns The declared SecurityLevel.
-     */
     private SecurityLevel GetSecurityLevelForAction(AgentAction action)
     {
         var memberInfo = typeof(AgentAction).GetMember(action.ToString()).FirstOrDefault();
@@ -102,4 +78,3 @@ public class ActionDispatcher(string rootDirectory, ILogger logger, UserConfig u
         return attribute?.Level ?? SecurityLevel.RequiresStrongAuthentication;
     }
 }
-
