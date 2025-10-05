@@ -2,19 +2,15 @@
 using System.Text.Json;
 using Alembic.Agent.Core.Helpers;
 using Alembic.Agent.Core.Logging;
+using Alembic.Agent.Core.Models;
 
 namespace Alembic.Agent.Core;
-
-/*
- * Represents a single instruction. The Parameters property is a flexible JSON
- * element that allows each action to have its own unique set of arguments.
- */
-public record Command(string Action, JsonElement Parameters);
 
 /*
  * The core class responsible for receiving commands and dispatching them
  * to the appropriate secure handlers. This is the "engine" of the Local Agent.
  * @param rootDirectory The secure root directory for all file and process operations.
+ * @param logger The logging provider to use for all output.
  */
 public class ActionDispatcher(string rootDirectory, ILogger logger)
 {
@@ -25,20 +21,22 @@ public class ActionDispatcher(string rootDirectory, ILogger logger)
      */
     public async Task ExecuteActionAsync(Command command)
     {
-        switch (command.Action.ToLowerInvariant())
+        switch (command.Action)
         {
-            case "create_file":
+            case AgentAction.CreateFile:
                 HandleCreateFile(command.Parameters);
                 break;
-            case "dotnet_build":
+            case AgentAction.DotnetBuild:
                 await HandleDotnetBuildAsync(command.Parameters);
                 break;
-            case "dotnet_new_classlib":
+            case AgentAction.DotnetNewClasslib:
                 await HandleDotnetNewClasslibAsync(command.Parameters);
                 break;
-            // Add more cases for git_commit, dotnet_run etc. as we need them.
+            case AgentAction.GitCommit:
+                await HandleGitCommitAsync(command.Parameters);
+                break;
             default:
-                Console.WriteLine($"Error: Unknown action '{command.Action}'.");
+                logger.LogError($"Unknown action '{command.Action}'.");
                 break;
         }
     }
@@ -99,8 +97,14 @@ public class ActionDispatcher(string rootDirectory, ILogger logger)
             return;
         }
         
-        var arguments = $"build \"{projectPath}\"";
-        await ExecuteProcessAsync("dotnet", arguments);
+        if (string.IsNullOrWhiteSpace(projectPath))
+        {
+            await ExecuteProcessAsync(AllowedExecutable.Dotnet, "build");
+        }
+        else
+        {
+            await ExecuteProcessAsync(AllowedExecutable.Dotnet, "build", projectPath);
+        }
     }
 
     /*
@@ -123,23 +127,48 @@ public class ActionDispatcher(string rootDirectory, ILogger logger)
             return;
         }
 
-        var arguments = $"new classlib -o \"{sanitizedPath}\"";
-        await ExecuteProcessAsync("dotnet", arguments);
+        await ExecuteProcessAsync(AllowedExecutable.Dotnet, "new", "classlib", "-o", sanitizedPath);
+    }
+
+    /*
+     * Securely handles executing a 'git commit' command by passing arguments
+     * directly to the process, avoiding shell interpretation.
+     * @param parameters The JSON parameters, expecting 'message' and optional 'stageAll'.
+     */
+    private async Task HandleGitCommitAsync(JsonElement parameters)
+    {
+        if (!parameters.TryGetProperty("message", out var messageProp) || messageProp.GetString() is not { } message || string.IsNullOrWhiteSpace(message))
+        {
+            logger.LogError("'message' parameter is required and cannot be empty for git_commit action.");
+            return;
+        }
+
+        var stageAll = parameters.TryGetProperty("stageAll", out var stageAllProp) && stageAllProp.GetBoolean();
+
+        if (stageAll)
+        {
+            // First, stage all changes.
+            await ExecuteProcessAsync(AllowedExecutable.Git, "add", ".");
+        }
+        
+        // The 'message' is passed as a separate, literal argument, making this inherently secure.
+        await ExecuteProcessAsync(AllowedExecutable.Git, "commit", "-m", message);
     }
 
     /*
      * A generalized, secure process executor. It runs a specified executable
-     * with given arguments, always sandboxed to the project's root directory.
-     * @param executable The command or application to run (e.g., "dotnet", "git").
-     * @param arguments The arguments to pass to the executable.
+     * from a whitelist with a list of arguments, always sandboxed to the project's root directory.
+     * @param executable The whitelisted command to run.
+     * @param arguments The list of arguments to pass to the executable.
      * @returns A Task representing the asynchronous operation.
      */
-    private async Task ExecuteProcessAsync(string executable, string arguments)
+    private async Task ExecuteProcessAsync(AllowedExecutable executable, params string[] arguments)
     {
+        var executableName = executable.ToString().ToLowerInvariant();
+        
         var processStartInfo = new ProcessStartInfo
         {
-            FileName = executable,
-            Arguments = arguments,
+            FileName = executableName,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -147,9 +176,15 @@ public class ActionDispatcher(string rootDirectory, ILogger logger)
             WorkingDirectory = rootDirectory
         };
 
+        foreach (var arg in arguments)
+        {
+            processStartInfo.ArgumentList.Add(arg);
+        }
+
         var process = new Process { StartInfo = processStartInfo };
         
-        logger.LogInfo($"Executing in '{rootDirectory}': {executable} {arguments}");
+        var commandForLog = $"{executableName} {string.Join(" ", arguments.Select(a => a.Contains(' ') ? $"\"{a}\"" : a))}";
+        logger.LogInfo($"Executing in '{rootDirectory}': {commandForLog}");
         
         process.Start();
         
@@ -158,10 +193,10 @@ public class ActionDispatcher(string rootDirectory, ILogger logger)
         
         await process.WaitForExitAsync();
 
-        if (!string.IsNullOrEmpty(output)) Console.WriteLine("Output:\n" + output);
-        if (!string.IsNullOrEmpty(error)) Console.WriteLine("Error Output:\n" + error);
+        if (!string.IsNullOrEmpty(output)) logger.LogInfo("Output:\n" + output);
+        if (!string.IsNullOrEmpty(error)) logger.LogError("Error Output:\n" + error);
         
-        Console.WriteLine($"Command finished with exit code: {process.ExitCode}");
+        logger.LogInfo($"Command finished with exit code: {process.ExitCode}");
     }
 }
 

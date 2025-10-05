@@ -1,7 +1,12 @@
-﻿using System.Text.Json;
+﻿using System;
+using System.IO;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using Alembic.Agent.Core;
 using Alembic.Agent.Core.Helpers;
 using Alembic.Agent.Core.Logging;
+using Alembic.Agent.Core.Models;
 using Alembic.Development.Bridge.Logging;
 
 namespace Alembic.Development.Bridge;
@@ -94,20 +99,25 @@ public static class Program
     {
         try
         {
-            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                Converters = { new JsonStringEnumConverter() }
+            };
+            
             var command = JsonSerializer.Deserialize<Command>(jsonInput, options);
 
-            if (command == null || string.IsNullOrWhiteSpace(command.Action))
+            if (command == null)
             {
-                logger.LogError("Invalid JSON or missing 'action' property.");
+                logger.LogError("Invalid JSON command format.");
                 return;
             }
                     
             await dispatcher.ExecuteActionAsync(command);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            logger.LogError("Invalid JSON format.");
+            logger.LogError($"Invalid JSON format: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -115,4 +125,3 @@ public static class Program
         }
     }
 }
-
