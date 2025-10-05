@@ -1,0 +1,377 @@
+# OpenAPI Specification for Project Alembic
+# Version: 1.0.0
+# This document defines the complete API for the cloud backend, encompassing all core microservices.
+# It serves as the official blueprint for both server-side implementation and client-side integration.
+
+openapi: 3.0.0
+info:
+  title: "Alembic Backend API"
+  description: |
+    The complete API specification for the Alembic "Extended Mind" system.
+    This backend is a microservices architecture designed to be secure, robust, and scalable.
+    It provides the core intelligence and knowledge management for the Local Agent.
+  version: "1.0.0"
+
+servers:
+  - url: "https://api.alembic.com/api/v1"
+    description: "Production Server"
+  - url: "http://localhost:5000/api/v1"
+    description: "Local Development Server"
+
+# 1. Global Components
+# --------------------
+
+components:
+  # Security Scheme: JWT Bearer Token
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "JWT Authorization header using the Bearer scheme."
+  
+  # Reusable Schemas for our data objects
+  schemas:
+    # Knowledge Core Schemas
+    KnowledgeQuantum:
+      type: object
+      properties:
+        quantumId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        organisationId:
+          type: string
+        visibility:
+          type: string
+          enum: [private, organisation, groups]
+        accessGroupIds:
+          type: array
+          items:
+            type: string
+        timestamp:
+          type: string
+          format: date-time
+        topic:
+          type: string
+        coreInsight:
+          type: string
+        # Embeddings and other fields are managed server-side
+    QuantumCreate:
+      type: object
+      required: [coreInsight, visibility]
+      properties:
+        coreInsight:
+          type: string
+        visibility:
+          type: string
+          enum: [private, organisation, groups]
+        topic:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        accessGroupIds:
+          type: array
+          items:
+            type: string
+        # ... other writable fields
+    
+    # Identity Service Schemas
+    UserRegister:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    UserLogin:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    AuthToken:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        expiresIn:
+          type: integer
+        refreshToken:
+          type: string
+          
+    # Access Control Schemas
+    GroupCreate:
+      type: object
+      required: [groupName]
+      properties:
+        groupName:
+          type: string
+        description:
+          type: string
+    AddMember:
+      type: object
+      required: [userId]
+      properties:
+        userId:
+          type: string
+
+# Apply JWT security globally to all endpoints
+security:
+  - bearerAuth: []
+
+# 2. API Paths & Endpoints
+# -------------------------
+
+paths:
+  # == Identity Service ==
+  /users/register:
+    post:
+      tags: [Identity]
+      summary: "Create a new user account"
+      security: [] # This endpoint is public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegister'
+      responses:
+        '201':
+          description: "User account created successfully."
+        '409':
+          description: "A user with the provided username already exists."
+  
+  /auth/login:
+    post:
+      tags: [Identity]
+      summary: "Authenticate a user and get a JWT"
+      security: [] # This endpoint is public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserLogin'
+      responses:
+        '200':
+          description: "Authentication successful."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthToken'
+        '401':
+          description: "Invalid credentials."
+
+  /users/me:
+    get:
+      tags: [Identity]
+      summary: "Get the profile of the current user"
+      responses:
+        '200':
+          description: "User profile data."
+        '401':
+          description: "Unauthorized."
+          
+  /users/me/export:
+    post:
+      tags: [Identity]
+      summary: "Initiate a full export of the user's data"
+      description: "Starts an asynchronous job to export all Knowledge Quanta for the user. Returns a job ID to check status."
+      responses:
+        '202':
+          description: "Export job accepted."
+        '401':
+          description: "Unauthorized."
+
+  # == Access Control Service ==
+  /groups:
+    post:
+      tags: [Access Control]
+      summary: "Create a new access group"
+      description: "Requires organization administrator privileges."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupCreate'
+      responses:
+        '201':
+          description: "Group created successfully."
+        '403':
+          description: "Forbidden. User is not an admin."
+  
+  /groups/{groupId}/members:
+    get:
+      tags: [Access Control]
+      summary: "List members of a group"
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: "A paginated list of group members."
+    post:
+      tags: [Access Control]
+      summary: "Add a user to a group"
+      description: "Requires organization administrator privileges."
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddMember'
+      responses:
+        '204':
+          description: "User added to group successfully."
+        '403':
+          description: "Forbidden. User is not an admin."
+  
+  /groups/{groupId}/members/{userId}:
+    delete:
+      tags: [Access Control]
+      summary: "Remove a user from a group"
+      description: "Requires organization administrator privileges."
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: "User removed from group successfully."
+        '403':
+          description: "Forbidden. User is not an admin."
+
+  # == Knowledge Core Service ==
+  /quanta:
+    post:
+      tags: [Knowledge Core]
+      summary: "Create a new Knowledge Quantum"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuantumCreate'
+      responses:
+        '201':
+          description: "Quantum created successfully."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quantumId:
+                    type: string
+  
+  /quanta/{quantumId}:
+    get:
+      tags: [Knowledge Core]
+      summary: "Get a Knowledge Quantum by ID"
+      parameters:
+        - name: quantumId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: "Successful response."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeQuantum'
+        '404':
+          description: "Quantum not found."
+    put:
+      tags: [Knowledge Core]
+      summary: "Update a Knowledge Quantum"
+      parameters:
+        - name: quantumId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuantumCreate' # Can reuse the create schema for updates
+      responses:
+        '200':
+          description: "Update successful."
+    delete:
+      tags: [Knowledge Core]
+      summary: "Delete a Knowledge Quantum"
+      parameters:
+        - name: quantumId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: "Delete successful."
+
+  /quanta/search:
+    post:
+      tags: [Knowledge Core]
+      summary: "Perform a semantic search for Quanta"
+      description: "Searches for quanta based on text similarity, vector similarity, and metadata filters."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                searchText:
+                  type: string
+                searchVector:
+                  type: array
+                  items:
+                    type: number
+                filters:
+                  type: object
+                  properties:
+                    topic:
+                      type: string
+                    tags:
+                      type: array
+                      items:
+                        type: string
+      responses:
+        '200':
+          description: "A paginated list of search results."
